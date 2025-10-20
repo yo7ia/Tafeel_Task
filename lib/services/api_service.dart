@@ -9,7 +9,7 @@ class ApiService {
   Future<Map<String, dynamic>> getUsers(int page) async {
     final response = await http.get(
       Uri.parse('$baseUrl/users?page=$page'),
-      // headers: headers,
+      headers: headers,
     );
     if (response.statusCode == 200) {
       return json.decode(response.body);
@@ -21,7 +21,7 @@ class ApiService {
   Future<Map<String, dynamic>> getUserById(int userId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/users/$userId'),
-      // headers: headers,
+      headers: headers,
     );
     if (response.statusCode == 200) {
       return json.decode(response.body);

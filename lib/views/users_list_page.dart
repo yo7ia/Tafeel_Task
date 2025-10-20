@@ -1,23 +1,30 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:tafeel_task/viewmodels/user_list_type_state.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:tafeel_task/repositories/user_repository.dart';
+import 'package:tafeel_task/views/widgets/custom_footer_style.dart';
+import 'package:tafeel_task/views/widgets/no_more_users.dart';
 import 'package:tafeel_task/views/widgets/user_card.dart';
 
-import '../viewmodels/user_view_model.dart';
-import 'widgets/custom_footer_style.dart';
-import 'widgets/no_more_users.dart';
+import '../blocs/user/user_bloc.dart';
+import '../blocs/user/user_event.dart';
+import '../blocs/user/user_state.dart';
+import '../blocs/viewtype/view_type_bloc.dart';
+import '../blocs/viewtype/view_type_event.dart';
+import '../blocs/viewtype/view_type_state.dart';
 
 class UserListPage extends StatelessWidget {
   const UserListPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
+    return MultiBlocProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => UserViewModel()..fetchUsers()),
-        ChangeNotifierProvider(create: (_) => UserListTypeState()),
+        BlocProvider(
+          create: (_) => UserBloc(UserRepository())..add(FetchUsers()),
+        ),
+        BlocProvider(create: (_) => ViewTypeBloc()),
       ],
       child: const _UserListPageContent(),
     );
@@ -58,80 +65,105 @@ class _UserListPageContentState extends State<_UserListPageContent> {
 
   @override
   Widget build(BuildContext context) {
-    final userVM = context.watch<UserViewModel>();
-    final viewState = context.watch<UserListTypeState>();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Users'),
         actions: [
-          IconButton(
-            icon: Icon(
-              viewState.isGrid ? Icons.view_list : Icons.grid_view_rounded,
-            ),
-            tooltip: viewState.isGrid
-                ? 'Switch to List View'
-                : 'Switch to Grid View',
-            onPressed: viewState.toggleViewType,
+          BlocBuilder<ViewTypeBloc, ViewTypeState>(
+            builder: (context, state) {
+              return IconButton(
+                icon: Icon(
+                  state.isGrid ? Icons.view_list : Icons.grid_view_rounded,
+                ),
+                tooltip: state.isGrid
+                    ? 'Switch to List View'
+                    : 'Switch to Grid View',
+                onPressed: () {
+                  context.read<ViewTypeBloc>().add(ToggleViewType());
+                },
+              );
+            },
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          RefreshIndicator(
-            onRefresh: () async {
-              await userVM.refreshUsers();
-            },
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (scrollInfo) {
-                if (scrollInfo.metrics.pixels ==
-                    scrollInfo.metrics.maxScrollExtent) {
-                  _restartHideTimer();
-                  if (!userVM.isLoading && userVM.hasMore) userVM.fetchUsers();
-                }
-                return false;
-              },
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 400),
-                child: viewState.isGrid
-                    ? _buildGridView(context, userVM)
-                    : _buildListView(context, userVM),
-              ),
-            ),
-          ),
+      body: BlocBuilder<UserBloc, UserState>(
+        builder: (context, userState) {
+          if (userState.isLoading && userState.users.isEmpty) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 400),
-              opacity: _showFooter ? 1.0 : 0.0,
-              curve: Curves.easeInOut,
-              child: _buildFloatingFooter(userVM),
-            ),
-          ),
-        ],
+          if (userState.error != null) {
+            return Center(child: Text('Error: ${userState.error}'));
+          }
+
+          if (userState.users.isEmpty) {
+            return const Center(child: Text('No users found.'));
+          }
+
+          return Stack(
+            children: [
+              RefreshIndicator(
+                onRefresh: () async {
+                  context.read<UserBloc>().add(RefreshUsers());
+                },
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (scrollInfo) {
+                    if (scrollInfo.metrics.pixels ==
+                        scrollInfo.metrics.maxScrollExtent) {
+                      _restartHideTimer();
+                      if (!userState.isLoading && userState.hasMore) {
+                        context.read<UserBloc>().add(FetchUsers());
+                      }
+                    }
+                    return false;
+                  },
+                  child: BlocBuilder<ViewTypeBloc, ViewTypeState>(
+                    builder: (context, viewState) {
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 400),
+                        child: viewState.isGrid
+                            ? _buildGridView(userState)
+                            : _buildListView(userState),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 400),
+                  opacity: _showFooter ? 1.0 : 0.0,
+                  curve: Curves.easeInOut,
+                  child: _buildFloatingFooter(userState),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildListView(BuildContext context, UserViewModel userVM) {
+  Widget _buildListView(UserState state) {
     return ListView.builder(
-      key: const ValueKey('lv'),
+      key: const ValueKey('list_view'),
       padding: const EdgeInsets.only(bottom: 100),
-      itemCount: userVM.users.length,
+      itemCount: state.users.length,
       itemBuilder: (context, index) {
-        return UserCardWidget(user: userVM.users[index], isGrid: false);
+        return UserCardWidget(user: state.users[index], isGrid: false);
       },
     );
   }
 
-  Widget _buildGridView(BuildContext context, UserViewModel userVM) {
+  Widget _buildGridView(UserState state) {
     return GridView.builder(
-      key: const ValueKey('gv'),
+      key: const ValueKey('grid_view'),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
-      itemCount: userVM.users.length,
+      itemCount: state.users.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         mainAxisSpacing: 12,
@@ -139,13 +171,13 @@ class _UserListPageContentState extends State<_UserListPageContent> {
         childAspectRatio: 1,
       ),
       itemBuilder: (context, index) {
-        return UserCardWidget(user: userVM.users[index], isGrid: true);
+        return UserCardWidget(user: state.users[index], isGrid: true);
       },
     );
   }
 
-  Widget _buildFloatingFooter(UserViewModel userVM) {
-    if (userVM.isLoading) {
+  Widget _buildFloatingFooter(UserState state) {
+    if (state.isLoading) {
       return CustomFooter(
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -163,7 +195,7 @@ class _UserListPageContentState extends State<_UserListPageContent> {
           ],
         ),
       );
-    } else if (!userVM.hasMore) {
+    } else if (!state.hasMore) {
       return const CustomFooter(child: NoMoreUsersMessage());
     } else {
       return const SizedBox.shrink();

@@ -23,7 +23,7 @@ class UserCardWidget extends StatelessWidget {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => UserDetailPage(userId: user.id)),
+          MaterialPageRoute(builder: (_) => UserDetailsPage(userId: user.id)),
         );
       },
       child: Card(
@@ -77,7 +77,7 @@ class UserCardWidget extends StatelessWidget {
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => UserDetailPage(userId: user.id)),
+            MaterialPageRoute(builder: (_) => UserDetailsPage(userId: user.id)),
           );
         },
       ),

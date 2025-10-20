@@ -1,41 +1,30 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:tafeel_task/repositories/user_repository.dart';
 
-import '../models/user_model.dart';
-import '../repositories/user_repository.dart';
+import '../blocs/user_details/user_details_bloc.dart';
+import '../blocs/user_details/user_details_event.dart';
+import '../blocs/user_details/user_details_state.dart';
 
-class UserDetailPage extends StatefulWidget {
+class UserDetailsPage extends StatelessWidget {
   final int userId;
-  const UserDetailPage({super.key, required this.userId});
+
+  const UserDetailsPage({super.key, required this.userId});
 
   @override
-  State<UserDetailPage> createState() => _UserDetailPageState();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (_) =>
+          UserDetailBloc(UserRepository())..add(FetchUserDetail(userId)),
+      child: const _UserDetailView(),
+    );
+  }
 }
 
-class _UserDetailPageState extends State<UserDetailPage> {
-  final UserRepository _repository = UserRepository();
-  UserModel? user;
-  bool isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchUser();
-  }
-
-  Future<void> _fetchUser() async {
-    try {
-      final fetchedUser = await _repository.fetchUserDetails(widget.userId);
-      setState(() {
-        user = fetchedUser;
-        isLoading = false;
-      });
-    } catch (e) {
-      debugPrint("Error fetching user details: $e");
-      setState(() => isLoading = false);
-    }
-  }
+class _UserDetailView extends StatelessWidget {
+  const _UserDetailView();
 
   @override
   Widget build(BuildContext context) {
@@ -46,23 +35,39 @@ class _UserDetailPageState extends State<UserDetailPage> {
         elevation: 0,
         backgroundColor: Colors.transparent,
       ),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 400),
-        child: isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : user == null
-            ? const Center(
-                child: Text(
-                  'Failed to load user',
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
-                ),
-              )
-            : _buildUserDetail(context),
+      body: BlocBuilder<UserDetailBloc, UserDetailState>(
+        builder: (context, state) {
+          if (state.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (state.error != null) {
+            return Center(
+              child: Text(
+                'Failed to load user\n${state.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            );
+          }
+
+          if (state.user == null) {
+            return const Center(
+              child: Text(
+                'User not found.',
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            );
+          }
+
+          final user = state.user!;
+          return _buildUserDetail(context, user);
+        },
       ),
     );
   }
 
-  Widget _buildUserDetail(BuildContext context) {
+  Widget _buildUserDetail(BuildContext context, dynamic user) {
     return Stack(
       children: [
         Container(
@@ -74,21 +79,20 @@ class _UserDetailPageState extends State<UserDetailPage> {
             ),
           ),
         ),
-
         SingleChildScrollView(
           padding: const EdgeInsets.only(top: 120, bottom: 40),
           child: Column(
             children: [
               Hero(
-                tag: 'user_${user!.id}',
+                tag: 'user_${user.id}',
                 child: CircleAvatar(
-                  backgroundImage: NetworkImage(user!.avatar),
+                  backgroundImage: NetworkImage(user.avatar),
                   radius: 60,
                 ),
               ),
               const SizedBox(height: 20),
               Text(
-                '${user!.firstName} ${user!.lastName}',
+                '${user.firstName} ${user.lastName}',
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -97,11 +101,10 @@ class _UserDetailPageState extends State<UserDetailPage> {
               ),
               const SizedBox(height: 6),
               Text(
-                user!.email,
+                user.email,
                 style: const TextStyle(fontSize: 15, color: Colors.white70),
               ),
               const SizedBox(height: 30),
-
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: ClipRRect(
@@ -112,29 +115,29 @@ class _UserDetailPageState extends State<UserDetailPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.white30),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildInfoTile(
+                          _buildInfoRow(
                             icon: Icons.person_outline,
                             label: 'Full Name',
-                            value: '${user!.firstName} ${user!.lastName}',
+                            value: '${user.firstName} ${user.lastName}',
                           ),
                           const Divider(color: Colors.white30),
-                          _buildInfoTile(
+                          _buildInfoRow(
                             icon: Icons.email_outlined,
                             label: 'Email',
-                            value: user!.email,
+                            value: user.email,
                           ),
                           const Divider(color: Colors.white30),
-                          _buildInfoTile(
+                          _buildInfoRow(
                             icon: Icons.badge_outlined,
                             label: 'User ID',
-                            value: user!.id.toString(),
+                            value: user.id.toString(),
                           ),
                         ],
                       ),
@@ -150,7 +153,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
     );
   }
 
-  Widget _buildInfoTile({
+  Widget _buildInfoRow({
     required IconData icon,
     required String label,
     required String value,
